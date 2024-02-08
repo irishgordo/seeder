@@ -59,13 +59,59 @@ const (
 	MachineNotContactable       condition.Cond = "machineNotContactable"
 )
 
+//     method: Method to assign an IP to this network. The following are supported:
+//     static: Manually assign an IP and gateway.
+//     dhcp: Request an IP from the DHCP server.
+// ip: Static IP for this network. Required if static method is chosen.
+// subnet_mask: Subnet mask for this network. Required if static method is chosen.
+// gateway: Gateway for this network. Required if static method is chosen.
+// interfaces: An array of interface names. If provided, the installer then combines these NICs into a single logical bonded interface.
+//     interfaces.name: The name of the slave interface for the bonded network.
+//     interfaces.hwAddr: The hardware MAC address of the interface.
+// bond_options: Options for bonded interfaces. Refer to here for more info. If not provided, the following options would be used:
+//     mode: balance-tlb
+//     miimon: 100
+// mtu: The MTU for the interface.
+// vlan_id: The VLAN ID for the interface.
+
+// // install:
+//   mode: create
+//   management_interface:
+//     interfaces:
+//     - name: ens5
+//       hwAddr: "B8:CA:3A:6A:64:7D"     # The hwAddr is optional
+//     method: dhcp
+//     bond_options:
+//       mode: balance-tlb
+//       miimon: 100
+//     mtu: 1492
+//     vlan_id: 101
+type InterfacesToUseMgmt struct {
+	Name   string `json:"name,omitempty"`
+	HwAddr string `json:"hwAddr,omitempty"`
+}
+
+type InterfaceBondOption struct {
+	Mode   string `json:"mode,omitempty"`
+	Miimon string `json:"miimon,omitempty"`
+}
+
+type LoadoutNicInfo struct {
+	ListOfInterfaces []InterfacesToUseMgmt `json:"listOfInterfaces,omitempty"`
+	Method           string                `json:"method,omitempty"`
+	Mtu              string                `json:"mtu,omitempty"`
+	VlanId           string                `json:"vlanId,omitempty"`
+	BondOptions      InterfaceBondOption   `json:"bondOptions,omitempty"`
+}
+
 // InventorySpec defines the desired state of Inventory
 type InventorySpec struct {
 	PrimaryDisk                   string            `json:"primaryDisk"`
 	ManagementInterfaceMacAddress string            `json:"managementInterfaceMacAddress"`
 	BaseboardManagementSpec       rufio.MachineSpec `json:"baseboardSpec"`
 	Events                        `json:"events"`
-	PowerActionRequested          string `json:"powerActionRequested,omitempty"`
+	PowerActionRequested          string         `json:"powerActionRequested,omitempty"`
+	NicConfig                     LoadoutNicInfo `json:"nicConfig,omitempty"`
 }
 
 type BMCSecretReference struct {

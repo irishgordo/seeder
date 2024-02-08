@@ -32,15 +32,23 @@ func GenerateHWRequest(i *seederv1alpha1.Inventory, c *seederv1alpha1.Cluster) (
 	}
 
 	var m string
-	if strings.Contains(c.Spec.HarvesterVersion, "v1.0") {
-		m, err = generateMetaDataV10(c.Spec.ConfigURL, c.Spec.HarvesterVersion, i.Spec.ManagementInterfaceMacAddress, mode,
-			i.Spec.PrimaryDisk, c.Status.ClusterAddress, c.Status.ClusterToken, i.Status.GeneratedPassword, c.Spec.ImageURL, c.Spec.ClusterConfig.Nameservers, c.Spec.ClusterConfig.SSHKeys)
+	if len(i.Spec.NicConfig.ListOfInterfaces) != 0 || i.Spec.NicConfig.ListOfInterfaces != nil {
+		m, err = generateMetadataWithExtraNicConfig(c.Spec.ConfigURL, c.Spec.HarvesterVersion, i.Spec.ManagementInterfaceMacAddress, mode,
+			i.Spec.PrimaryDisk, c.Status.ClusterAddress, c.Status.ClusterToken, i.Status.GeneratedPassword, c.Spec.ImageURL, c.Spec.ClusterConfig.Nameservers, c.Spec.ClusterConfig.SSHKeys, i.Spec.NicConfig)
+		if err != nil {
+			return nil, errors.Wrap(err, "error during metadata generation")
+		}
 	} else {
-		m, err = generateMetaDataV11(c.Spec.ConfigURL, c.Spec.HarvesterVersion, i.Spec.ManagementInterfaceMacAddress, mode,
-			i.Spec.PrimaryDisk, c.Status.ClusterAddress, c.Status.ClusterToken, i.Status.GeneratedPassword, c.Spec.ImageURL, c.Spec.ClusterConfig.Nameservers, c.Spec.ClusterConfig.SSHKeys)
-	}
-	if err != nil {
-		return nil, errors.Wrap(err, "error during metadata generation")
+		if strings.Contains(c.Spec.HarvesterVersion, "v1.0") {
+			m, err = generateMetaDataV10(c.Spec.ConfigURL, c.Spec.HarvesterVersion, i.Spec.ManagementInterfaceMacAddress, mode,
+				i.Spec.PrimaryDisk, c.Status.ClusterAddress, c.Status.ClusterToken, i.Status.GeneratedPassword, c.Spec.ImageURL, c.Spec.ClusterConfig.Nameservers, c.Spec.ClusterConfig.SSHKeys)
+		} else {
+			m, err = generateMetaDataV11(c.Spec.ConfigURL, c.Spec.HarvesterVersion, i.Spec.ManagementInterfaceMacAddress, mode,
+				i.Spec.PrimaryDisk, c.Status.ClusterAddress, c.Status.ClusterToken, i.Status.GeneratedPassword, c.Spec.ImageURL, c.Spec.ClusterConfig.Nameservers, c.Spec.ClusterConfig.SSHKeys)
+		}
+		if err != nil {
+			return nil, errors.Wrap(err, "error during metadata generation")
+		}
 	}
 
 	hw = &tinkv1alpha1.Hardware{
@@ -92,6 +100,64 @@ func GenerateHWRequest(i *seederv1alpha1.Inventory, c *seederv1alpha1.Cluster) (
 	}
 
 	return hw, nil
+}
+
+func generateMetadataWithExtraNicConfig(configURL, version, hwAddress, mode, disk, vip, token, password, imageurl string, Nameservers, SSHKeys []string, nicConfig seederv1alpha1.LoadoutNicInfo) (metadata string, err error) {
+
+	var tmpStruct struct {
+		ConfigURL   string
+		HWAddress   string
+		Mode        string
+		Disk        string
+		VIP         string
+		Token       string
+		SSHKeys     []string
+		Nameservers []string
+		Password    string
+		IsoURL      string
+		nicConf     seederv1alpha1.LoadoutNicInfo
+	}
+	var output bytes.Buffer
+	tmpStruct.ConfigURL = configURL
+	tmpStruct.HWAddress = hwAddress
+	tmpStruct.Mode = mode
+	tmpStruct.Disk = disk
+	tmpStruct.VIP = vip
+	tmpStruct.Token = token
+	tmpStruct.Password = password
+	tmpStruct.SSHKeys = SSHKeys
+	tmpStruct.Nameservers = Nameservers
+	tmpStruct.Password = password
+	tmpStruct.nicConf = nicConfig
+	endpoint := defaultISOURL
+	if imageurl != "" {
+		endpoint = imageurl
+	}
+	tmpStruct.IsoURL = fmt.Sprintf("%s/%s/harvester-%s-amd64.iso", endpoint, version, version)
+
+	// TODO: This is absolute and utter trash, refactor to leverage json unmarshalling, just trying to hack to get this working
+	interfacesStringsArrayForKernelArgs := []string{"["}
+	// justString := strings.Join(stringArray," ")
+	// fmt.Println(justString)
+	// harvester.install.networks.harvester-mgmt.interfaces=[{hwAddr: '02:00:00:31:99:62'}, {hwAddr: '02:00:00:62:96:DB'}]
+	for i := 0; i < len(tmpStruct.nicConf.ListOfInterfaces); i++ {
+		newStrArryObjBlockInterface := []string{"{", "hwAddr:", tmpStruct.nicConf.ListOfInterfaces[i].HwAddr, ",", "name:", tmpStruct.nicConf.ListOfInterfaces[i].Name, "}"}
+		interfacesStringsArrayForKernelArgs = append(interfacesStringsArrayForKernelArgs, newStrArryObjBlockInterface...)
+	}
+	interfacesStringsArrayForKernelArgs = append(interfacesStringsArrayForKernelArgs, "]")
+
+	var metaDataStruct = `{{ if ne .ConfigURL ""}}harvester.install.config_url={{ .ConfigURL }}{{end}} harvester.install.networks.harvester-mgmt.interfaces=` + strings.Join(interfacesStringsArrayForKernelArgs, "") + ` console=ttyS1,115200  harvester.install.mode={{ .Mode }} harvester.token={{ .Token }} harvester.os.password={{ .Password }} {{ range $v := .SSHKeys}}harvester.os.ssh_authorized_keys=\"- {{ $v }} \ "{{ end }}{{range $v := .Nameservers}}harvester.os.dns_nameservers={{ $v }} {{end}} harvester.install.vip={{ .VIP }} harvester.install.vip_mode=static harvester.install.iso_url={{ .IsoURL }} harvester.install.device={{ .Disk }} {{if eq .Mode "join"}}harvester.server_url={{ printf "https://%s:8443" .VIP }}{{end}}`
+
+	metadataTmpl := template.Must(template.New("MetaData").Parse(metaDataStruct))
+
+	err = metadataTmpl.Execute(&output, tmpStruct)
+
+	if err != nil {
+		return metadata, err
+	}
+
+	metadata = output.String()
+	return metadata, nil
 }
 
 // generateMetaDataV10 is a wrapper to generate metadata for nodes to create or join a cluster

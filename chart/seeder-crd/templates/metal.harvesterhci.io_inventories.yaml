@@ -107,6 +107,31 @@ spec:
                 type: string
               primaryDisk:
                 type: string
+              nicConfig:
+                type: object
+                properties:
+                  mtu:
+                    type: string
+                  vlanId:
+                    type: string
+                  method:
+                    type: string
+                  bondOptions:
+                    type: object
+                    properties:
+                      mode:
+                        type: string
+                      miimon:
+                        type: string
+                  listOfInterfaces:
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        hwAddr:
+                          type: string
+                    type: array
             required:
             - baseboardSpec
             - events
