@@ -62,6 +62,15 @@ func Test_joinModeCloudConfig(t *testing.T) {
 	assert.Contains(hc.WipeDisksList, "/dev/vda", "expected to find /dev/vda in wipeDisksList")
 }
 
+func Test_createModeCloudConfigWithLoadedCustomizedContent(t *testing.T) {
+	assert := require.New(t)
+	cloudConfig, err := generateCloudConfig("file:///testdata/customized-create.yaml", "", "", "", "", "", "", "", "", nil, nil, nil, "", "", "", "", "", false, false, 2021, "", "", "")
+	assert.NoError(err)
+	hc := config.NewHarvesterConfig()
+	err = yaml.Unmarshal([]byte(cloudConfig), hc)
+	assert.NoError(err)
+}
+
 var (
 	i = &seederv1alpha1.Inventory{
 		ObjectMeta: metav1.ObjectMeta{
